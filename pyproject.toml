@@ -1,14 +1,19 @@
 [tool.poetry]
 name = "bokeh-modbus"
 version = "0.1.0"
-description = ""
+description = "A simple Bokeh server app visualizing Modbus data"
 authors = ["Brian McClune <bpmcclune@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+pymodbus = {version = "^3.0.0*", allow-prereleases = true}
+bokeh = "^2.4.2"
+numpy = "^1.22.3"
+pandas = "^1.4.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
+ipykernel = "^6.13.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
