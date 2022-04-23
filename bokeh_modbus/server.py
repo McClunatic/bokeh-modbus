@@ -25,10 +25,10 @@ def update_coils(context: ModbusSlaveContext):
         context: Slave context to update.
     """
 
-    # Get epoch time as 32 bits
+    # Get epoch time as 64 bits
     now = time.time()
-    bitstring = f'{np.asarray(now, dtype=np.float32).view(np.int32):032b}'
-    bits = [b == '1' for b in bitstring]
+    bstring = f'{np.asarray(now, dtype=np.float64).view(np.uint64):064b}'
+    bits = [b == '1' for b in bstring]
 
     # Update coils from hex address 0 (fx 1 maps to coils)
     fx = 1
@@ -36,15 +36,15 @@ def update_coils(context: ModbusSlaveContext):
 
     # Get sin(t) as 32 bits
     sin = np.sin(now)
-    bitstring = f'{np.asarray(sin, dtype=np.float32).view(np.int32):032b}'
-    bits = [b == '1' for b in bitstring]
+    bstring = f'{np.asarray(sin, dtype=np.float32).view(np.uint32):032b}'
+    bits = [b == '1' for b in bstring]
 
     # Update coils from address 2 (fx 1 maps to coils)
     fx = 1
-    context.setValues(fx, 2, bits)
+    context.setValues(fx, 64, bits)
 
 
-async def update_context(context: ModbusServerContext, interval: float = 1.0):
+async def update_context(context: ModbusServerContext, interval: float = 0.1):
     """Updates the server `context` on a regular interval.
 
     Args:
