@@ -1,107 +1,81 @@
-#!/usr/bin/env python3
-"""
-Pymodbus Asynchronous Server Example
---------------------------------------------------------------------------
+"""A simple asynchronous server."""
 
-The asynchronous server is a high performance implementation using the
-twisted library as its backend.  This allows it to scale to many thousands
-of nodes which can be helpful for testing monitoring software.
-"""
-# --------------------------------------------------------------------------- #
-# import the various server implementations
-# --------------------------------------------------------------------------- #
 import asyncio
-
-from pymodbus.version import version
-from pymodbus.server.async_io import StartTcpServer
-from pymodbus.server.async_io import StartUdpServer
-from pymodbus.server.async_io import StartSerialServer
-
-from pymodbus.device import ModbusDeviceIdentification
-from pymodbus.datastore import ModbusSequentialDataBlock
-from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
-from pymodbus.transaction import (ModbusRtuFramer,
-                                  ModbusAsciiFramer,
-                                  ModbusBinaryFramer)
-
-# --------------------------------------------------------------------------- #
-# configure the service logging
-# --------------------------------------------------------------------------- #
 import logging
-FORMAT = ('%(asctime)-15s %(threadName)-15s'
-          ' %(levelname)-8s %(module)-15s:%(lineno)-8s %(message)s')
-logging.basicConfig(format=FORMAT)
-log = logging.getLogger()
-log.setLevel(logging.DEBUG)
+import signal
+import time
+
+import numpy as np
+
+from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
+from pymodbus.device import ModbusDeviceIdentification
+from pymodbus.server.async_io import ModbusTcpServer
+from pymodbus.version import version
+
+# Set up basic logging
+logging.basicConfig()
+logging.getLogger().setLevel(logging.DEBUG)
+log = logging.getLogger(__name__)
 
 
-async def run_async_server():
-    # ----------------------------------------------------------------------- #
-    # initialize your data store
-    # ----------------------------------------------------------------------- #
-    # The datastores only respond to the addresses that they are initialized to
-    # Therefore, if you initialize a DataBlock to addresses from 0x00 to 0xFF,
-    # a request to 0x100 will respond with an invalid address exception.
-    # This is because many devices exhibit this kind of behavior (but not all)
-    #
-    #     block = ModbusSequentialDataBlock(0x00, [0]*0xff)
-    #
-    # Continuing, you can choose to use a sequential or a sparse DataBlock in
-    # your data context.  The difference is that the sequential has no gaps in
-    # the data while the sparse can. Once again, there are devices that exhibit
-    # both forms of behavior::
-    #
-    #     block = ModbusSparseDataBlock({0x00: 0, 0x05: 1})
-    #     block = ModbusSequentialDataBlock(0x00, [0]*5)
-    #
-    # Alternately, you can use the factory methods to initialize the DataBlocks
-    # or simply do not pass them to have them initialized to 0x00 on the full
-    # address range::
-    #
-    #     store = ModbusSlaveContext(di = ModbusSequentialDataBlock.create())
-    #     store = ModbusSlaveContext()
-    #
-    # Finally, you are allowed to use the same DataBlock reference for every
-    # table or you you may use a seperate DataBlock for each table.
-    # This depends if you would like functions to be able to access and modify
-    # the same data or not::
-    #
-    #     block = ModbusSequentialDataBlock(0x00, [0]*0xff)
-    #     store = ModbusSlaveContext(di=block, co=block, hr=block, ir=block)
-    #
-    # The server then makes use of a server context that allows the server to
-    # respond with different slave contexts for different unit ids. By default
-    # it will return the same context for every unit id supplied (broadcast
-    # mode).
-    # However, this can be overloaded by setting the single flag to False
-    # and then supplying a dictionary of unit id to context mapping::
-    #
-    #     slaves  = {
-    #         0x01: ModbusSlaveContext(...),
-    #         0x02: ModbusSlaveContext(...),
-    #         0x03: ModbusSlaveContext(...),
-    #     }
-    #     context = ModbusServerContext(slaves=slaves, single=False)
-    #
-    # The slave context can also be initialized in zero_mode which means that a
-    # request to address(0-7) will map to the address (0-7). The default is
-    # False which is based on section 4.4 of the specification, so address(0-7)
-    # will map to (1-8)::
-    #
-    #     store = ModbusSlaveContext(..., zero_mode=True)
-    # ----------------------------------------------------------------------- #
-    store = ModbusSlaveContext(
-        di=ModbusSequentialDataBlock(0, [17]*100),
-        co=ModbusSequentialDataBlock(0, [17]*100),
-        hr=ModbusSequentialDataBlock(0, [17]*100),
-        ir=ModbusSequentialDataBlock(0, [17]*100))
-    context = ModbusServerContext(slaves=store, single=True)
+def update_coils(context: ModbusSlaveContext):
+    """Updates the coils of slave `context` with new values.
 
-    # ----------------------------------------------------------------------- #
-    # initialize the server information
-    # ----------------------------------------------------------------------- #
-    # If you don't set this or any fields, they are defaulted to empty strings.
-    # ----------------------------------------------------------------------- #
+    Args:
+        context: Slave context to update.
+    """
+
+    # Get epoch time as 32 bits
+    now = time.time()
+    bitstring = f'{np.asarray(now, dtype=np.float32).view(np.int32):032b}'
+    bits = [b == '1' for b in bitstring]
+
+    # Update coils from hex address 0 (fx 1 maps to coils)
+    fx = 1
+    context.setValues(fx, 0, bits)
+
+    # Get sin(t) as 32 bits
+    sin = np.sin(now)
+    bitstring = f'{np.asarray(sin, dtype=np.float32).view(np.int32):032b}'
+    bits = [b == '1' for b in bitstring]
+
+    # Update coils from address 2 (fx 1 maps to coils)
+    fx = 1
+    context.setValues(fx, 2, bits)
+
+
+async def update_context(context: ModbusServerContext, interval: float = 1.0):
+    """Updates the server `context` on a regular interval.
+
+    Args:
+        context: Slave context to update.
+        interval: Interval in seconds between updates.
+    """
+
+    # Update slave context on set interval
+    unit = 0x00
+    slave = context[unit]
+    while True:
+        try:
+            update_coils(slave)
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            log.debug('Cancelling context updates')
+            break
+
+
+async def main():
+    """Runs the asynchronous server.
+
+    Args:
+        context: Slave context to update.
+    """
+
+    # Create the store (a Modbus data model) with fully initialized ranges
+    store = ModbusSlaveContext()
+    context = ModbusServerContext(slaves=store)
+
+    # Initialize server information
     identity = ModbusDeviceIdentification()
     identity.VendorName = 'Pymodbus'
     identity.ProductCode = 'PM'
@@ -110,40 +84,25 @@ async def run_async_server():
     identity.ModelName = 'Pymodbus Server'
     identity.MajorMinorRevision = version.short()
 
-    # ----------------------------------------------------------------------- #
-    # run the server you want
-    # ----------------------------------------------------------------------- #
+    # Add coils updater to event loop
+    loop = asyncio.get_event_loop()
+    task = loop.create_task(update_context(context))
 
-    # TCP Server
+    # Create the TCP Server
+    adr = ('', 5020)
+    server = ModbusTcpServer(context, address=adr, defer_start=True, loop=loop)
 
-    await StartTcpServer(context, identity=identity, address=("localhost", 5020), defer_start=False)
+    # Add signal handlers for graceful closure
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, task.cancel)
+        loop.add_signal_handler(sig, server.server_close)
 
-    # TCP Server with deferred reactor run
-
-    # from twisted.internet import reactor
-    # StartTcpServer(context, identity=identity, address=("localhost", 5020),
-    #                defer_reactor_run=True)
-    # reactor.run()
-
-    # Server with RTU framer
-    # StartTcpServer(context, identity=identity, address=("localhost", 5020),
-    #                framer=ModbusRtuFramer)
-
-    # UDP Server
-    # StartUdpServer(context, identity=identity, address=("127.0.0.1", 5020))
-
-    # RTU Server
-    # StartSerialServer(context, identity=identity,
-    #                   port='/dev/ttyp0', framer=ModbusRtuFramer)
-
-    # ASCII Server
-    # StartSerialServer(context, identity=identity,
-    #                   port='/dev/ttyp0', framer=ModbusAsciiFramer)
-
-    # Binary Server
-    # StartSerialServer(context, identity=identity,
-    #                   port='/dev/ttyp0', framer=ModbusBinaryFramer)
+    # Start the server
+    try:
+        await server.serve_forever()
+    except asyncio.CancelledError:
+        pass
 
 
 if __name__ == "__main__":
-    asyncio.run(run_async_server())
+    asyncio.run(main())
