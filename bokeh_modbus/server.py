@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import signal
+import sys
 import time
 
 import numpy as np
@@ -94,8 +95,19 @@ async def main():
 
     # Add signal handlers for graceful closure
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, task.cancel)
-        loop.add_signal_handler(sig, server.server_close)
+        if sys.platform == 'linux':
+            loop.add_signal_handler(sig, task.cancel)
+            loop.add_signal_handler(sig, server.server_close)
+        elif sys.platform == 'win32':
+
+            def cancel(*args, task=task):
+                task.cancel()
+
+            def server_close(*args, server=server):
+                server.server_close()
+
+            signal.signal(sig, cancel)
+            signal.signal(sig, server_close)
 
     # Start the server
     try:
