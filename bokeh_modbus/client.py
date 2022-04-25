@@ -1,6 +1,7 @@
 """A simple asynchronous client."""
 
 import asyncio
+import functools
 import logging
 import time
 
@@ -11,6 +12,25 @@ import numpy as np
 from pymodbus.client.asynchronous.async_io import ModbusClientProtocol
 from pymodbus.client.asynchronous.tcp import AsyncModbusTCPClient
 from pymodbus.client.asynchronous import schedulers
+
+from asyncio.proactor_events import _ProactorBaseWritePipeTransport
+
+
+def silence_event_loop_closed(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except RuntimeError as exc:
+            if exc.args != ('Event loop is closed',):
+                raise exc
+    return wrapper
+
+
+_ProactorBaseWritePipeTransport.__del__ = silence_event_loop_closed(
+    _ProactorBaseWritePipeTransport.__del__,
+)
+
 
 # Set up basic logging
 logging.basicConfig()
