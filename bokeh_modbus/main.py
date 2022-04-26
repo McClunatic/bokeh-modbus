@@ -85,7 +85,7 @@ async def update():
 
 
 p = figure(x_range=[0, 100], y_range=[0, 20])
-l = p.circle(x='x', y='y', color='color', source=source)
+p.circle(x='x', y='y', color='color', source=source)
 
 doc.add_periodic_callback(unlocked_task, 1000)
 doc.add_periodic_callback(update, 200)
