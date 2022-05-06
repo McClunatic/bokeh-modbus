@@ -6,41 +6,18 @@ import functools
 import logging
 import time
 
-from typing import Callable, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
-import tornado.httpserver
-import tornado.ioloop
 
-from bokeh.application import Application
-from bokeh.application.handlers.function import FunctionHandler
 from bokeh.document import Document
 from bokeh.models import ColumnDataSource
 from bokeh.plotting import figure
-from bokeh.server.server import BaseServer
-from bokeh.server.tornado import BokehTornado
+from bokeh.server.server import Server
 
 from pymodbus.client.asynchronous.async_io import ModbusClientProtocol
 from pymodbus.client.asynchronous.tcp import AsyncModbusTCPClient
 from pymodbus.client.asynchronous import schedulers
-
-from asyncio.proactor_events import _ProactorBaseWritePipeTransport
-
-
-def silence_event_loop_closed(func):
-    @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        try:
-            return func(self, *args, **kwargs)
-        except RuntimeError as exc:
-            if exc.args != ('Event loop is closed',):
-                raise exc
-    return wrapper
-
-
-_ProactorBaseWritePipeTransport.__del__ = silence_event_loop_closed(
-    _ProactorBaseWritePipeTransport.__del__,
-)
 
 
 # Set up basic logging
@@ -136,19 +113,7 @@ async def main():
     client = await client_task
 
     bokeh_app = functools.partial(bkapp, protocol=client.protocol)
-
-    port = 8888
-    tornado_app = BokehTornado(
-        Application(FunctionHandler(bokeh_app)),
-        extra_websocket_origins=[f'localhost:{port}'],
-    )
-    http_server = tornado.httpserver.HTTPServer(tornado_app)
-    http_server.listen(port)
-    bokeh_server = BaseServer(
-        tornado.ioloop.IOLoop.current(),
-        tornado_app,
-        http_server,
-    )
+    bokeh_server = Server(bokeh_app, port=8888)
     bokeh_server.start()
     await asyncio.Event().wait()
 
@@ -158,4 +123,5 @@ if __name__ == '__main__':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(main())
     except KeyboardInterrupt:
+        log.debug('Closing Modbus client and Bokeh server')
         pass
