@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import functools
 import logging
+import sys
 import time
 
 from typing import List, Tuple
@@ -120,7 +121,10 @@ async def main():
 
 if __name__ == '__main__':
     try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        if sys.platform.startswith('win'):
+            asyncio.set_event_loop_policy(
+                asyncio.WindowsSelectorEventLoopPolicy(),
+            )
         asyncio.run(main())
     except KeyboardInterrupt:
         log.debug('Closing Modbus client and Bokeh server')
