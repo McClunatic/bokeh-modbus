@@ -68,6 +68,15 @@ async def read_coils(
             dtime = datetime.datetime.fromtimestamp(epoch_time)
             log.debug('time: %s\tsin(t): %.6f', dtime, sin)
             await asyncio.sleep(1)
+        except AttributeError as exc:
+            assert exc.args[0] in [
+                "'NoneType' object has no attribute 'write'",
+                "'NoneType' object has no attribute 'read_coils'",
+            ]
+            log.debug('AttributeError, rebuilding client and retrying...')
+            client = await get_client()
+            protocol = client.protocol
+            await asyncio.sleep(1)
         except asyncio.TimeoutError:
             log.debug('TimeoutError, retrying...')
             await asyncio.sleep(1)
@@ -75,17 +84,30 @@ async def read_coils(
             break
 
 
-async def main():
-    """Runs the asynchronous client."""
+async def get_client() -> AsyncModbusTCPClient:
+    """Gets an AsyncModbusTCPClient.
+
+    Returns:
+        The client object.
+    """
 
     loop = asyncio.get_running_loop()
+
     _, client_task = AsyncModbusTCPClient(
         schedulers.ASYNC_IO,
         port=5020,
         loop=loop,
     )
     client = await client_task
+    return client
 
+
+async def main():
+    """Runs the asynchronous client."""
+
+    loop = asyncio.get_running_loop()
+
+    client = await get_client()
     await loop.create_task(read_coils(client.protocol))
 
 
