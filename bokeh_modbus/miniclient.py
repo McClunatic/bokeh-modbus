@@ -68,6 +68,9 @@ async def read_coils(
             dtime = datetime.datetime.fromtimestamp(epoch_time)
             log.debug('time: %s\tsin(t): %.6f', dtime, sin)
             await asyncio.sleep(1)
+        except asyncio.TimeoutError:
+            log.debug('TimeoutError, retrying...')
+            await asyncio.sleep(1)
         except asyncio.CancelledError:
             break
 
